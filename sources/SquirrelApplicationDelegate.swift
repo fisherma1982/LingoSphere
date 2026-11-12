@@ -6,14 +6,12 @@
 //
 
 import UserNotifications
-import Sparkle
 import AppKit
 import InputMethodKit
 
-final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverDelegate, UNUserNotificationCenterDelegate {
+final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
   static let rimeWikiURL = URL(string: "https://github.com/rime/home/wiki")!
-  static let updateNotificationIdentifier = "SquirrelUpdateNotification"
-  static let notificationIdentifier = "SquirrelNotification"
+  static let notificationIdentifier = "LingoSphereNotification"
 
   let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
   var config: SquirrelConfig?
@@ -21,41 +19,12 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
   var enableNotifications = false
   var showStatusIcon: Bool = true
   var statusItem: NSStatusItem?
-  let updateController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
-  var supportsGentleScheduledUpdateReminders: Bool {
-    true
-  }
-
-  func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-    NSApp.setActivationPolicy(.regular)
-    if !state.userInitiated {
-      NSApp.dockTile.badgeLabel = "1"
-      let content = UNMutableNotificationContent()
-      content.title = NSLocalizedString("A new update is available", comment: "Update")
-      content.body = NSLocalizedString("Version [version] is now available", comment: "Update").replacingOccurrences(of: "[version]", with: update.displayVersionString)
-      let request = UNNotificationRequest(identifier: Self.updateNotificationIdentifier, content: content, trigger: nil)
-      UNUserNotificationCenter.current().add(request)
-    }
-  }
-
-  func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
-    NSApp.dockTile.badgeLabel = ""
-    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.updateNotificationIdentifier])
-  }
-
-  func standardUserDriverWillFinishUpdateSession() {
-    NSApp.setActivationPolicy(.accessory)
-  }
-
-  func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-    if response.notification.request.identifier == Self.updateNotificationIdentifier && response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-      updateController.updater.checkForUpdates()
-    }
-
-    completionHandler()
-  }
+  var appleCandidateTranslator: AppleCandidateTranslator?
+  @available(macOS 15.0, *)
+  private var settingsWindowController: LingoSphereSettingsWindowController?
 
   func applicationWillFinishLaunching(_ notification: Notification) {
+    LingoSphereIdentity.migrateLegacyPreferencesIfNeeded()
     panel = SquirrelPanel(position: .zero)
     refreshStatusItem()
     addObservers()
@@ -66,6 +35,11 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     NotificationCenter.default.removeObserver(self)
     DistributedNotificationCenter.default().removeObserver(self)
     panel?.hide()
+    if #available(macOS 15.0, *) {
+      MainActor.assumeIsolated {
+        appleCandidateTranslator?.stop()
+      }
+    }
     if let item = statusItem {
       NSStatusBar.system.removeStatusItem(item)
       statusItem = nil
@@ -98,17 +72,19 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     NSWorkspace.shared.open(SquirrelApp.userDir)
   }
 
-  func checkForUpdates() {
-    if updateController.updater.canCheckForUpdates {
-      print("Checking for updates")
-      updateController.updater.checkForUpdates()
-    } else {
-      print("Cannot check for updates")
-    }
-  }
-
   func openWiki() {
     NSWorkspace.shared.open(Self.rimeWikiURL)
+  }
+
+  func showLingoSphereSettings() {
+    guard #available(macOS 15.0, *) else { return }
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      if self.settingsWindowController == nil {
+        self.settingsWindowController = LingoSphereSettingsWindowController(appDelegate: self)
+      }
+      self.settingsWindowController?.show()
+    }
   }
 
   static func showMessage(msgText: String?) {
@@ -121,7 +97,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     center.getNotificationSettings { settings in
       if (settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional) && settings.alertSetting == .enabled {
         let content = UNMutableNotificationContent()
-        content.title = NSLocalizedString("Squirrel", comment: "")
+        content.title = LingoSphereIdentity.chineseName
         if let msgText = msgText {
           content.subtitle = msgText
         }
@@ -147,15 +123,15 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     // swiftlint:enable identifier_name
     rimeAPI.set_notification_handler(notification_handler, context_object)
 
-    var squirrelTraits = RimeTraits.rimeStructInit()
-    squirrelTraits.setCString(Bundle.main.sharedSupportPath!, to: \.shared_data_dir)
-    squirrelTraits.setCString(SquirrelApp.userDir.path(), to: \.user_data_dir)
-    squirrelTraits.setCString(SquirrelApp.logDir.path(), to: \.log_dir)
-    squirrelTraits.setCString("Squirrel", to: \.distribution_code_name)
-    squirrelTraits.setCString("鼠鬚管", to: \.distribution_name)
-    squirrelTraits.setCString(Bundle.main.object(forInfoDictionaryKey: kCFBundleVersionKey as String) as! String, to: \.distribution_version)
-    squirrelTraits.setCString("rime.squirrel", to: \.app_name)
-    rimeAPI.setup(&squirrelTraits)
+    var traits = RimeTraits.rimeStructInit()
+    traits.setCString(Bundle.main.sharedSupportPath!, to: \.shared_data_dir)
+    traits.setCString(SquirrelApp.userDir.path(), to: \.user_data_dir)
+    traits.setCString(SquirrelApp.logDir.path(), to: \.log_dir)
+    traits.setCString(LingoSphereIdentity.englishName, to: \.distribution_code_name)
+    traits.setCString(LingoSphereIdentity.chineseName, to: \.distribution_name)
+    traits.setCString(Bundle.main.object(forInfoDictionaryKey: kCFBundleVersionKey as String) as! String, to: \.distribution_version)
+    traits.setCString("rime.lingosphere", to: \.app_name)
+    rimeAPI.setup(&traits)
   }
 
   func startRime(fullCheck: Bool) {
@@ -174,6 +150,15 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
 
     enableNotifications = config!.getString("show_notifications_when") != "never"
     showStatusIcon = config!.getBool("status_icon/show") ?? true
+    if #available(macOS 15.0, *) {
+      MainActor.assumeIsolated {
+        if appleCandidateTranslator == nil {
+          appleCandidateTranslator = AppleCandidateTranslator()
+        }
+        appleCandidateTranslator?.configure(config: config!)
+        appleCandidateTranslator?.start()
+      }
+    }
     refreshStatusItem()
     if let panel = panel, let config = self.config {
       panel.load(config: config, forDarkMode: false)
@@ -201,7 +186,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
   // Detect repeated launches that may indicate a bad configuration loop.
   func problematicLaunchDetected() -> Bool {
     var detected = false
-    let logFile = FileManager.default.temporaryDirectory.appendingPathComponent("squirrel_launch.json", conformingTo: .json)
+    let logFile = FileManager.default.temporaryDirectory.appendingPathComponent("lingosphere_launch.json", conformingTo: .json)
     do {
       let archive = try Data(contentsOf: logFile, options: [.uncached])
       let decoder = JSONDecoder()
@@ -232,10 +217,10 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: nil, using: workspaceWillPowerOff)
 
     let notifCenter = DistributedNotificationCenter.default()
-    notifCenter.addObserver(forName: .init("SquirrelReloadNotification"), object: nil, queue: nil, using: rimeNeedsReload)
-    notifCenter.addObserver(forName: .init("SquirrelSyncNotification"), object: nil, queue: nil, using: rimeNeedsSync)
-    notifCenter.addObserver(forName: .init("SquirrelToggleASCIIModeNotification"), object: nil, queue: nil, using: rimeToggleASCIIMode)
-    notifCenter.addObserver(forName: .init("SquirrelGetASCIIModeNotification"), object: nil, queue: nil, using: rimeGetASCIIMode)
+    notifCenter.addObserver(forName: LingoSphereIdentity.reloadNotification, object: nil, queue: nil, using: rimeNeedsReload)
+    notifCenter.addObserver(forName: LingoSphereIdentity.syncNotification, object: nil, queue: nil, using: rimeNeedsSync)
+    notifCenter.addObserver(forName: LingoSphereIdentity.toggleASCIINotification, object: nil, queue: nil, using: rimeToggleASCIIMode)
+    notifCenter.addObserver(forName: LingoSphereIdentity.getASCIINotification, object: nil, queue: nil, using: rimeGetASCIIMode)
     // Suspension behavior matters: the default coalescing holds notifications
     // back while the process is inactive, which is exactly the state Squirrel
     // enters when the user switches away — the icon would fail to hide until
@@ -246,7 +231,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    print("Squirrel is quitting.")
+    print("LingoSphere is quitting.")
     rimeAPI.cleanup_all_sessions()
     return .terminateNow
   }
@@ -357,7 +342,7 @@ private extension SquirrelApplicationDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     if let button = item.button {
       button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
-      button.toolTip = NSLocalizedString("Squirrel", comment: "")
+      button.toolTip = "\(LingoSphereIdentity.chineseName) · \(LingoSphereIdentity.englishName)"
     }
     statusItem = item
     applyStatusIcon(asciiMode: false, schemaLabel: nil)
@@ -374,7 +359,7 @@ private extension SquirrelApplicationDelegate {
   func updateStatusItemVisibility() {
     guard let statusItem = statusItem else { return }
     let currentInputSourceID = SquirrelInstaller.currentInputSourceID() ?? ""
-    statusItem.isVisible = currentInputSourceID.hasPrefix("im.rime.inputmethod.Squirrel")
+    statusItem.isVisible = currentInputSourceID.hasPrefix(LingoSphereIdentity.inputSourceIdentifierPrefix)
   }
 
   // macOS 26 does not call deactivateServer when the input source is switched
@@ -386,7 +371,7 @@ private extension SquirrelApplicationDelegate {
   // no-op.
   func finalizeStrandedComposition() {
     let currentInputSourceID = SquirrelInstaller.currentInputSourceID() ?? ""
-    guard !currentInputSourceID.hasPrefix("im.rime.inputmethod.Squirrel") else { return }
+    guard !currentInputSourceID.hasPrefix(LingoSphereIdentity.inputSourceIdentifierPrefix) else { return }
     if let inputController = panel?.inputController {
       inputController.deactivateServer(inputController.client())
     }
@@ -426,14 +411,14 @@ private extension SquirrelApplicationDelegate {
     let enableASCII = mode == "ascii"
 
     if enableASCII {
-      NotificationCenter.default.post(name: .init("SquirrelSetASCIIModeNotification"), object: true)
+      NotificationCenter.default.post(name: LingoSphereIdentity.setASCIIModeNotification, object: true)
     } else {
-      NotificationCenter.default.post(name: .init("SquirrelSetASCIIModeNotification"), object: false)
+      NotificationCenter.default.post(name: LingoSphereIdentity.setASCIIModeNotification, object: false)
     }
   }
 
   func rimeGetASCIIMode(_: Notification) {
-    NotificationCenter.default.post(name: .init("SquirrelReportASCIIModeNotification"), object: nil)
+    NotificationCenter.default.post(name: LingoSphereIdentity.requestASCIIModeReportNotification, object: nil)
   }
 
   func createDirIfNotExist(path: URL) {

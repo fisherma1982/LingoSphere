@@ -7,19 +7,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Squirrel"
+            "value" : "LingoSphere"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠须管"
+            "value" : "语界"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠鬚管"
+            "value" : "语界"
           }
         }
       }
@@ -31,88 +31,88 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Squirrel"
+            "value" : "LingoSphere"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠须管"
+            "value" : "语界"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠鬚管"
+            "value" : "语界"
           }
         }
       }
     },
-    "im.rime.inputmethod.Squirrel" : {
+    "com.lingosphere.inputmethod.LingoSphere" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Squirrel"
+            "value" : "LingoSphere"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠须管"
+            "value" : "语界"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠鬚管"
+            "value" : "语界"
           }
         }
       }
     },
-    "im.rime.inputmethod.Squirrel.Hans" : {
+    "com.lingosphere.inputmethod.LingoSphere.Hans" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Squirrel - Simplified"
+            "value" : "LingoSphere - Simplified Chinese"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠须管"
+            "value" : "语界（简体）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠须管"
+            "value" : "语界（简体）"
           }
         }
       }
     },
-    "im.rime.inputmethod.Squirrel.Hant" : {
+    "com.lingosphere.inputmethod.LingoSphere.Hant" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Squirrel - Traditional"
+            "value" : "LingoSphere - Traditional Chinese"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠鬚管"
+            "value" : "语界（繁体）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠鬚管"
+            "value" : "语界（繁体）"
           }
         }
       }
@@ -124,19 +124,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copyleft, RIME Developers"
+            "value" : "LingoSphere contributors; based on the open-source RIME project"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "式恕堂 版权所无"
+            "value" : "语界贡献者；基于 RIME 开源项目"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "式恕堂 版權所無"
+            "value" : "语界贡献者；基于 RIME 开源项目"
           }
         }
       }

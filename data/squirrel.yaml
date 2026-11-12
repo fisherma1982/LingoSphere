@@ -1,7 +1,7 @@
-# Squirrel settings
+# LingoSphere settings
 # encoding: utf-8
 
-config_version: '1.0'
+config_version: '1.2-lingosphere-settings'
 
 # options: last | default | _custom_
 # last: the last used latin keyboard layout
@@ -24,33 +24,47 @@ show_notifications_when: appropriate
 status_icon:
   show: true
 
-style:
-  color_scheme: native
-  # Optional: define both light and dark color schemes to match system appearance
-  #color_scheme: solarized_light
-  #color_scheme_dark: solarized_dark
+# Apple Translation runs entirely on-device on macOS 15 and later. English
+# fills empty or approximate comments; other selected languages replace stale
+# schema comments so a candidate page never mixes target languages. Set
+# require_option to true only when a schema deliberately provides the switch.
+apple_translation:
+  enabled: true
+  option_name: candidate_translation
+  # Keep false in the distributable build so a clean install works with every schema.
+  require_option: false
+  source_language: zh-Hans
+  # Used only before the user makes a first-run selection. The app supports
+  # en, ja, ko, de, es-ES and pt-BR and stores the user's choice separately.
+  target_language: en
+  debounce_ms: 220
+  max_comment_chars: 38
 
-  # horizontal is Deprecated since 0.36, Squirrel 0.15, removed since 1.0.1
+style:
+  color_scheme: lingosphere_light
+  color_scheme_dark: lingosphere_dark
+
+  # horizontal is deprecated in current Rime front-end configurations.
   candidate_list_layout: stacked  # stacked | linear
   text_orientation: horizontal  # horizontal | vertical
   inline_preedit: true
   # Whether to embed selected candidate as text in input field
   inline_candidate: false
   # Whether candidate panel stick to screen edge to reduce jumping
-  memorize_size: true
+  memorize_size: false
   # Whether transparent colors stack on each other
-  mutual_exclusive: false
+  mutual_exclusive: true
   # Whether to use a translucent background. Only visible when background color is transparent
   translucency: false
   # Enable to show small arrows that indicates if paging up/down is possible
   show_paging: false
 
-  corner_radius: 7
-  hilited_corner_radius: 0
-  border_height: -2
-  border_width: -2
+  corner_radius: 12
+  hilited_corner_radius: 7
+  border_height: 8
+  border_width: 10
   # Space between candidates in stacked layout
-  line_spacing: 5
+  line_spacing: 4
   # Space between preedit and candidates in non-inline mode
   spacing: 8
   # A number greater than 0 renders shadow around high-lighted candidate
@@ -59,23 +73,68 @@ style:
   # Nagetive means shrink, positive meas expand
   #surrounding_extra_expansion: 0
 
-  # format using %@ and %c is deprecated since 1.0, Squirrel 1.0
+  # format using %@ and %c is deprecated in current Rime front ends
   # %@ is automatically expanded to "[candidate] [comment]"
   # and %c is replaced by "[label]"
-  candidate_format: '[label]. [candidate] [comment]'
+  candidate_format: '[label]  [candidate]   [comment]'
 
   # adjust the base line of text
   #base_offset: 0
-  font_face: 'Avenir'
-  font_point: 16
-  #label_font_face: 'Avenir'
-  #label_font_point: 12
-  #comment_font_face: 'Avenir'
-  #comment_font_point: 16
+  font_face: ''
+  font_point: 17
+  label_font_face: 'Helvetica Neue'
+  label_font_point: 11
+  comment_font_face: 'Helvetica Neue'
+  comment_font_point: 13
   #preedit_font_face: 'Avenir'
   #preedit_font_point: 16
 
 preset_color_schemes:
+  lingosphere_light:
+    name: 语界／清新亮色
+    author: LingoSphere
+    color_space: srgb
+    back_color: 0xF7F7F7
+    border_color: 0xE1E1E1
+    candidate_text_color: 0x222222
+    label_color: 0x929292
+    comment_text_color: 0x707070
+    hilited_candidate_back_color: 0xDDF1E5
+    hilited_candidate_text_color: 0x151515
+    hilited_candidate_label_color: 0x4B6757
+    hilited_comment_text_color: 0x52665A
+    alpha: 0.98
+
+  lingosphere_dark:
+    name: 语界／清新深色
+    author: LingoSphere
+    color_space: srgb
+    back_color: 0x292B2A
+    border_color: 0x3A3C3B
+    candidate_text_color: 0xF0F0F0
+    label_color: 0x8B8B8B
+    comment_text_color: 0xB6B6B6
+    hilited_candidate_back_color: 0x425A4B
+    hilited_candidate_text_color: 0xFFFFFF
+    hilited_candidate_label_color: 0xC2D8CB
+    hilited_comment_text_color: 0xD5E2DA
+    alpha: 0.98
+
+  lingosphere_graphite:
+    name: 语界／石墨深色
+    author: LingoSphere
+    color_space: srgb
+    back_color: 0x292421
+    border_color: 0x4F4540
+    candidate_text_color: 0xF7F2EF
+    label_color: 0xA19A8A
+    comment_text_color: 0xC4B7AD
+    hilited_candidate_back_color: 0x855133
+    hilited_candidate_text_color: 0xFFFFFF
+    hilited_candidate_label_color: 0xFFEBC2
+    hilited_comment_text_color: 0xFFE0CC
+    alpha: 0.98
+
   native:
     name: 系統配色
 

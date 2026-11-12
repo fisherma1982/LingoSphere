@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
-    <title>Squirrel-@VERSION@</title>
+    <title>语界输入法 · LingoSphere @VERSION@</title>
     <conclusion file="conclusion.html" mime-type="text/html"/>
-    <pkg-ref id="im.rime.inputmethod.Squirrel"/>
+    <pkg-ref id="com.lingosphere.inputmethod.LingoSphere"/>
     <options customize="never" hostArchitectures="arm64,x86_64" require-scripts="false" rootVolumeOnly="true"/>
+    <allowed-os-versions>
+        <os-version min="15.0"/>
+    </allowed-os-versions>
     <choices-outline>
         <line choice="default">
-            <line choice="im.rime.inputmethod.Squirrel"/>
+            <line choice="com.lingosphere.inputmethod.LingoSphere"/>
         </line>
     </choices-outline>
     <choice id="default"/>
-    <choice id="im.rime.inputmethod.Squirrel" visible="false">
-        <pkg-ref id="im.rime.inputmethod.Squirrel"/>
+    <choice id="com.lingosphere.inputmethod.LingoSphere" visible="false">
+        <pkg-ref id="com.lingosphere.inputmethod.LingoSphere"/>
     </choice>
-    <pkg-ref id="im.rime.inputmethod.Squirrel" onConclusion="RequireLogout">Squirrel-component.pkg</pkg-ref>
+    <pkg-ref id="com.lingosphere.inputmethod.LingoSphere" onConclusion="RequireLogout">LingoSphere-component.pkg</pkg-ref>
 </installer-gui-script>

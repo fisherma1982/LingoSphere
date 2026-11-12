@@ -1,21 +1,168 @@
 #!/bin/bash
-set -e
 
-login_user=`/usr/bin/stat -f%Su /dev/console`
-squirrel_app_root="${DSTROOT}/Squirrel.app"
-squirrel_executable="${squirrel_app_root}/Contents/MacOS/Squirrel"
-rime_package_installer="${squirrel_app_root}/Contents/MacOS/rime-install"
-rime_shared_data_path="${squirrel_app_root}/Contents/SharedSupport"
+set -euo pipefail
 
-/usr/bin/sudo -u "${login_user}" /usr/bin/killall Squirrel > /dev/null || true
+login_user="$(/usr/bin/stat -f%Su /dev/console)"
+install_location="${2:-/Library/Input Methods}"
+support_root="/Library/Application Support/LingoSphere"
+pending_backup_file="${support_root}/pending-backup.txt"
+backup_root=""
+if [[ -f "${pending_backup_file}" ]]; then
+    backup_root="$(/bin/cat "${pending_backup_file}")"
+fi
+case "${backup_root}" in
+    "${support_root}"/backups/*)
+        ;;
+    *)
+        backup_root="${support_root}/backups/$(/bin/date +%Y%m%d-%H%M%S)"
+        ;;
+esac
+legacy_app="/Library/Input Methods/Squirrel.app"
+lingosphere_app_root="${install_location%/}/LingoSphere.app"
+if [[ ! -d "${lingosphere_app_root}" ]]; then
+    lingosphere_app_root="/Library/Input Methods/LingoSphere.app"
+fi
+lingosphere_executable="${lingosphere_app_root}/Contents/MacOS/LingoSphere"
+rime_shared_data_path="${lingosphere_app_root}/Contents/SharedSupport"
+lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
-"${squirrel_executable}" --register-input-source
+run_for_login_user() {
+    if [[ -n "${login_user}" && "${login_user}" != "root" && "${login_user}" != "loginwindow" ]]; then
+        /usr/bin/sudo -u "${login_user}" "$@"
+    else
+        "$@"
+    fi
+}
 
-if [ -z "${RIME_NO_PREBUILD}" ]; then
+unregister_duplicate_apps() {
+    local bundle_id="$1"
+    local keep_path="${2:-}"
+    while IFS= read -r registered_path; do
+        [[ -n "${registered_path}" && "${registered_path}" != "${keep_path}" ]] || continue
+        run_for_login_user "${lsregister}" -u "${registered_path}" >/dev/null 2>&1 || true
+    done < <(run_for_login_user /usr/bin/mdfind "kMDItemCFBundleIdentifier == '${bundle_id}'c" 2>/dev/null || true)
+}
+
+migrate_legacy_candidate_translator() {
+    local user_name="$1"
+    local home_record
+    local user_home
+    local rime_dir
+    local migration_root
+    local migration_dir
+
+    home_record="$(/usr/bin/dscl . -read "/Users/${user_name}" NFSHomeDirectory 2>/dev/null || true)"
+    user_home="${home_record#NFSHomeDirectory: }"
+    if [[ -z "${user_home}" || "${user_home}" == "${home_record}" ]]; then
+        user_home="/Users/${user_name}"
+    fi
+    rime_dir="${user_home}/Library/Rime"
+    [[ -d "${rime_dir}" ]] || return 0
+
+    migration_root="${rime_dir}/candidate_translator"
+    migration_dir="${migration_root}/legacy-backups"
+    while IFS= read -r -d '' custom_config; do
+        # Only touch configuration files created by our August prototype. User
+        # configurations without this exact marker are never rewritten.
+        if ! /usr/bin/head -n 1 "${custom_config}" \
+            | /usr/bin/grep -Fqx '# Squirrel Candidate Translator Prototype'; then
+            continue
+        fi
+
+        local timestamp
+        local backup_file
+        local temporary_file
+        local original_owner
+        local original_mode
+        original_owner="$(/usr/bin/stat -f '%u:%g' "${custom_config}")"
+        original_mode="$(/usr/bin/stat -f '%Lp' "${custom_config}")"
+        timestamp="$(/bin/date +%Y%m%d-%H%M%S)"
+        /bin/mkdir -p "${migration_dir}"
+        /usr/sbin/chown "${original_owner}" "${migration_root}" "${migration_dir}"
+        backup_file="${migration_dir}/$(/usr/bin/basename "${custom_config}").${timestamp}.bak"
+        /usr/bin/ditto "${custom_config}" "${backup_file}"
+
+        temporary_file="$(/usr/bin/mktemp "${custom_config}.migration.XXXXXX")"
+        /usr/bin/awk '
+          {
+            if (NR == 1 && $0 == "# Squirrel Candidate Translator Prototype") {
+              print "# Squirrel Candidate Translator (legacy settings migrated)"
+              next
+            }
+            if (skipping) {
+              if ($0 ~ /^  [^[:space:]]/) {
+                skipping = 0
+              } else {
+                next
+              }
+            }
+            if ($0 == "  \"switches/+\":" ||
+                $0 == "  \"engine/filters/+\":" ||
+                $0 == "  candidate_translator:") {
+              skipping = 1
+              next
+            }
+            print
+          }
+        ' "${custom_config}" > "${temporary_file}"
+
+        /usr/sbin/chown "${original_owner}" "${temporary_file}" "${backup_file}"
+        /bin/chmod "${original_mode}" "${temporary_file}" "${backup_file}"
+        /bin/mv -f "${temporary_file}" "${custom_config}"
+        /usr/bin/printf 'Migrated legacy candidate translator configuration: %s\n' "${custom_config}"
+        /usr/bin/printf 'Legacy configuration backup: %s\n' "${backup_file}"
+    done < <(/usr/bin/find "${rime_dir}" -maxdepth 1 -type f -name '*.custom.yaml' -print0)
+}
+
+if [[ -n "${login_user}" && "${login_user}" != "root" && "${login_user}" != "loginwindow" ]]; then
+    migrate_legacy_candidate_translator "${login_user}"
+fi
+
+/usr/bin/killall LingoSphere >/dev/null 2>&1 || true
+/usr/bin/killall Squirrel >/dev/null 2>&1 || true
+
+# Remove the legacy bundle only after the new payload has been installed. It
+# was disabled during preinstall and remains recoverable in a dated backup.
+if [[ -d "${legacy_app}" ]]; then
+    run_for_login_user "${lsregister}" -u "${legacy_app}" >/dev/null 2>&1 || true
+    /bin/mkdir -p "${backup_root}"
+    legacy_archive="${backup_root}/Squirrel.app"
+    if [[ -e "${legacy_archive}" ]]; then
+        legacy_archive="${backup_root}/Squirrel-legacy.app"
+    fi
+    /bin/mv "${legacy_app}" "${legacy_archive}"
+    /usr/bin/printf '%s\n' "${backup_root}" > "${support_root}/latest-backup.txt"
+fi
+
+# Xcode and previous manual builds can leave several LaunchServices records
+# for one bundle ID. Those duplicates make the System Settings picker show a
+# stale name or hide the installed copy. Keep only the canonical system app.
+unregister_duplicate_apps "im.rime.inputmethod.Squirrel"
+unregister_duplicate_apps "com.lingosphere.inputmethod.LingoSphere" "${lingosphere_app_root}"
+run_for_login_user "${lsregister}" -f "${lingosphere_app_root}" >/dev/null 2>&1 || true
+
+if [[ -z "${RIME_NO_PREBUILD:-}" ]]; then
     pushd "${rime_shared_data_path}" > /dev/null
-    "${squirrel_executable}" --build
+    if [[ -n "${login_user}" && "${login_user}" != "root" && "${login_user}" != "loginwindow" ]]; then
+        /usr/bin/sudo -u "${login_user}" "${lingosphere_executable}" --register-input-source
+        /usr/bin/sudo -u "${login_user}" "${lingosphere_executable}" --build
+    else
+        "${lingosphere_executable}" --register-input-source
+        "${lingosphere_executable}" --build
+    fi
     popd > /dev/null
-fi && (
-    /usr/bin/sudo -u "${login_user}" "${squirrel_executable}" --enable-input-source
-    /usr/bin/sudo -u "${login_user}" "${squirrel_executable}" --select-input-source
-)
+elif [[ -n "${login_user}" && "${login_user}" != "root" && "${login_user}" != "loginwindow" ]]; then
+    /usr/bin/sudo -u "${login_user}" "${lingosphere_executable}" --register-input-source
+else
+    "${lingosphere_executable}" --register-input-source
+fi
+
+if [[ -n "${login_user}" && "${login_user}" != "root" && "${login_user}" != "loginwindow" ]]; then
+    /usr/bin/sudo -u "${login_user}" "${lingosphere_executable}" --enable-input-source
+fi
+
+if [[ -f "${pending_backup_file}" ]]; then
+    /bin/mv -f "${pending_backup_file}" "${support_root}/last-completed-backup.txt"
+fi
+
+exit 0

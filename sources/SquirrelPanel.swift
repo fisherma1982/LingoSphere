@@ -317,12 +317,15 @@ final class SquirrelPanel: NSPanel {
   }
 
   func load(config: SquirrelConfig, forDarkMode isDark: Bool) {
+    let appearance = LingoSphereAppearanceSettings.load(config: config)
     if isDark {
       view.darkTheme = SquirrelTheme()
       view.darkTheme.load(config: config, dark: true)
+      view.darkTheme.applyLingoSphereAppearance(appearance, dark: true)
     } else {
       view.lightTheme = SquirrelTheme()
       view.lightTheme.load(config: config, dark: isDark)
+      view.lightTheme.applyLingoSphereAppearance(appearance, dark: false)
     }
   }
 }
@@ -551,16 +554,17 @@ private extension SquirrelPanel {
   }
 
   static func makeBackgroundView() -> NSView {
+    #if compiler(>=6.2)
     if #available(macOS 26.0, *) {
       let glassView = NSGlassEffectView()
       glassView.style = .clear
       return glassView
-    } else {
-      let visualEffectView = NSVisualEffectView()
-      visualEffectView.blendingMode = .behindWindow
-      visualEffectView.material = .hudWindow
-      visualEffectView.state = .active
-      return visualEffectView
     }
+    #endif
+    let visualEffectView = NSVisualEffectView()
+    visualEffectView.blendingMode = .behindWindow
+    visualEffectView.material = .hudWindow
+    visualEffectView.state = .active
+    return visualEffectView
   }
 }

@@ -304,6 +304,88 @@ final class SquirrelTheme {
     preeditFonts = decodeFonts(from: preeditFontName ?? fontName)
     self.preeditFontSize = preeditFontSize
   }
+
+  func applyLingoSphereAppearance(_ settings: LingoSphereAppearanceSettings, dark: Bool) {
+    available = true
+    linear = settings.layout == .linear
+    vertical = settings.orientation == .vertical
+    inlinePreedit = settings.inlinePreedit
+    translucency = settings.translucency
+    mutualExclusive = true
+    memorizeSize = false
+    showPaging = settings.showPaging
+    alpha = CGFloat(settings.opacity)
+    cornerRadius = CGFloat(settings.cornerRadius)
+    hilitedCornerRadius = CGFloat(settings.highlightedCornerRadius)
+    borderWidth = CGFloat(settings.horizontalPadding)
+    borderHeight = CGFloat(settings.verticalPadding)
+    linespace = CGFloat(settings.lineSpacing)
+
+    let fontName = settings.font.configValue
+    fonts = decodeFonts(from: fontName)
+    labelFonts = decodeFonts(from: fontName)
+    commentFonts = decodeFonts(from: fontName)
+    preeditFonts = decodeFonts(from: fontName)
+    fontSize = CGFloat(settings.fontSize)
+    labelFontSize = CGFloat(max(10, settings.fontSize - 6))
+    commentFontSize = CGFloat(settings.commentFontSize)
+    preeditFontSize = CGFloat(settings.fontSize)
+
+    switch settings.theme {
+    case .brand where dark:
+      native = false
+      backgroundColor = NSColor(srgbRed: 0.14, green: 0.16, blue: 0.20, alpha: 1)
+      borderColor = NSColor(srgbRed: 0.23, green: 0.26, blue: 0.32, alpha: 1)
+      textColor = NSColor(srgbRed: 0.78, green: 0.81, blue: 0.87, alpha: 1)
+      highlightedTextColor = .white
+      candidateTextColor = NSColor(srgbRed: 0.96, green: 0.97, blue: 0.99, alpha: 1)
+      highlightedCandidateTextColor = .white
+      candidateLabelColor = NSColor(srgbRed: 0.57, green: 0.61, blue: 0.69, alpha: 1)
+      highlightedCandidateLabelColor = NSColor(srgbRed: 0.72, green: 0.90, blue: 0.82, alpha: 1)
+      commentTextColor = NSColor(srgbRed: 0.73, green: 0.76, blue: 0.82, alpha: 1)
+      highlightedCommentTextColor = NSColor(srgbRed: 0.80, green: 0.93, blue: 0.87, alpha: 1)
+      highlightedBackColor = NSColor(srgbRed: 0.15, green: 0.34, blue: 0.29, alpha: 1)
+    case .brand:
+      native = false
+      backgroundColor = NSColor(srgbRed: 0.97, green: 0.98, blue: 1, alpha: 1)
+      borderColor = NSColor(srgbRed: 0.86, green: 0.89, blue: 0.94, alpha: 1)
+      textColor = NSColor(srgbRed: 0.31, green: 0.36, blue: 0.45, alpha: 1)
+      highlightedTextColor = NSColor(srgbRed: 0.09, green: 0.13, blue: 0.19, alpha: 1)
+      candidateTextColor = NSColor(srgbRed: 0.10, green: 0.13, blue: 0.18, alpha: 1)
+      highlightedCandidateTextColor = NSColor(srgbRed: 0.07, green: 0.12, blue: 0.10, alpha: 1)
+      candidateLabelColor = NSColor(srgbRed: 0.52, green: 0.57, blue: 0.65, alpha: 1)
+      highlightedCandidateLabelColor = NSColor(srgbRed: 0.24, green: 0.43, blue: 0.34, alpha: 1)
+      commentTextColor = NSColor(srgbRed: 0.38, green: 0.42, blue: 0.49, alpha: 1)
+      highlightedCommentTextColor = NSColor(srgbRed: 0.25, green: 0.40, blue: 0.33, alpha: 1)
+      highlightedBackColor = NSColor(srgbRed: 0.82, green: 0.96, blue: 0.89, alpha: 1)
+    case .system:
+      native = true
+      backgroundColor = .windowBackgroundColor
+      borderColor = .separatorColor
+      textColor = .secondaryLabelColor
+      highlightedTextColor = .labelColor
+      candidateTextColor = .labelColor
+      highlightedCandidateTextColor = .labelColor
+      candidateLabelColor = .secondaryLabelColor
+      highlightedCandidateLabelColor = .secondaryLabelColor
+      commentTextColor = .secondaryLabelColor
+      highlightedCommentTextColor = .secondaryLabelColor
+      highlightedBackColor = .selectedContentBackgroundColor
+    case .graphite:
+      native = false
+      backgroundColor = NSColor(srgbRed: 0.13, green: 0.14, blue: 0.16, alpha: 1)
+      borderColor = NSColor(srgbRed: 0.25, green: 0.27, blue: 0.31, alpha: 1)
+      textColor = NSColor(srgbRed: 0.77, green: 0.79, blue: 0.83, alpha: 1)
+      highlightedTextColor = .white
+      candidateTextColor = NSColor(srgbRed: 0.94, green: 0.95, blue: 0.97, alpha: 1)
+      highlightedCandidateTextColor = .white
+      candidateLabelColor = NSColor(srgbRed: 0.54, green: 0.57, blue: 0.63, alpha: 1)
+      highlightedCandidateLabelColor = NSColor(srgbRed: 0.76, green: 0.83, blue: 1, alpha: 1)
+      commentTextColor = NSColor(srgbRed: 0.68, green: 0.71, blue: 0.77, alpha: 1)
+      highlightedCommentTextColor = NSColor(srgbRed: 0.80, green: 0.85, blue: 1, alpha: 1)
+      highlightedBackColor = NSColor(srgbRed: 0.20, green: 0.28, blue: 0.52, alpha: 1)
+    }
+  }
 }
 
 private extension SquirrelTheme {

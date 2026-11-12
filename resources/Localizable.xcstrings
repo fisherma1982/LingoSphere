@@ -101,7 +101,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Squirrel is ready."
+            "value" : "LingoSphere is ready."
           }
         },
         "zh-Hans" : {
@@ -191,19 +191,19 @@
         }
       }
     },
-    "Squirrel" : {
+    "LingoSphere" : {
       "comment" : "Menu title",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠须管"
+            "value" : "语界"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠鬚管"
+            "value" : "语界"
           }
         }
       }

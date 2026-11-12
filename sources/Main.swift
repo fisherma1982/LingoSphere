@@ -15,10 +15,10 @@ struct SquirrelApp {
   } else {
     try! FileManager.default.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false).appendingPathComponent("Rime", isDirectory: true)
   }
-  static let appDir = "/Library/Input Methods/Squirrel.app".withCString { dir in
+  static let appDir = LingoSphereIdentity.installedAppPath.withCString { dir in
     URL(fileURLWithFileSystemRepresentation: dir, isDirectory: false, relativeTo: nil)
   }
-  static let logDir = FileManager.default.temporaryDirectory.appending(component: "rime.squirrel", directoryHint: .isDirectory)
+  static let logDir = FileManager.default.temporaryDirectory.appending(component: "rime.lingosphere", directoryHint: .isDirectory)
 
   // swiftlint:disable:next cyclomatic_complexity
   static func main() {
@@ -31,13 +31,13 @@ struct SquirrelApp {
         switch args[1] {
         case "--quit":
           let bundleId = Bundle.main.bundleIdentifier!
-          let runningSquirrels = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
-          runningSquirrels.forEach { $0.terminate() }
+          let runningInstances = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+          runningInstances.forEach { $0.terminate() }
           return true
         case "--reload":
           // Squirrel is a background app, and AppKit suspends distributed-notification delivery to inactive apps;
           // deliverImmediately is required for these notifications to reach Squirrel while it stays in the background
-          DistributedNotificationCenter.default().postNotificationName(.init("SquirrelReloadNotification"), object: nil, userInfo: nil, deliverImmediately: true)
+          DistributedNotificationCenter.default().postNotificationName(LingoSphereIdentity.reloadNotification, object: nil, userInfo: nil, deliverImmediately: true)
           return true
         case "--register-input-source", "--install":
           installer.register()
@@ -72,25 +72,25 @@ struct SquirrelApp {
         case "--build":
           SquirrelApplicationDelegate.showMessage(msgText: NSLocalizedString("deploy_update", comment: ""))
           var builderTraits = RimeTraits.rimeStructInit()
-          builderTraits.setCString("rime.squirrel-builder", to: \.app_name)
+          builderTraits.setCString("rime.lingosphere-builder", to: \.app_name)
           rimeAPI.setup(&builderTraits)
           rimeAPI.deployer_initialize(nil)
           _ = rimeAPI.deploy()
           return true
         case "--sync":
-          DistributedNotificationCenter.default().postNotificationName(.init("SquirrelSyncNotification"), object: nil, userInfo: nil, deliverImmediately: true)
+          DistributedNotificationCenter.default().postNotificationName(LingoSphereIdentity.syncNotification, object: nil, userInfo: nil, deliverImmediately: true)
           return true
         case "--ascii":
-          DistributedNotificationCenter.default().postNotificationName(.init("SquirrelToggleASCIIModeNotification"), object: "ascii", userInfo: nil, deliverImmediately: true)
+          DistributedNotificationCenter.default().postNotificationName(LingoSphereIdentity.toggleASCIINotification, object: "ascii", userInfo: nil, deliverImmediately: true)
           return true
         case "--nascii":
-          DistributedNotificationCenter.default().postNotificationName(.init("SquirrelToggleASCIIModeNotification"), object: "nascii", userInfo: nil, deliverImmediately: true)
+          DistributedNotificationCenter.default().postNotificationName(LingoSphereIdentity.toggleASCIINotification, object: "nascii", userInfo: nil, deliverImmediately: true)
           return true
         case "--getascii":
           var responseReceived = false
           var asciiStatus = ""
           let observer = DistributedNotificationCenter.default().addObserver(
-            forName: .init("SquirrelASCIIModeResponse"),
+            forName: LingoSphereIdentity.asciiModeResponseNotification,
             object: nil,
             queue: .main
           ) { notification in
@@ -99,7 +99,7 @@ struct SquirrelApp {
               responseReceived = true
             }
           }
-          DistributedNotificationCenter.default().postNotificationName(.init("SquirrelGetASCIIModeNotification"), object: nil, userInfo: nil, deliverImmediately: true)
+          DistributedNotificationCenter.default().postNotificationName(LingoSphereIdentity.getASCIINotification, object: nil, userInfo: nil, deliverImmediately: true)
           let timeout = Date().addingTimeInterval(2.0)
           while !responseReceived && Date() < timeout {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
@@ -138,7 +138,7 @@ struct SquirrelApp {
 
       if NSApp.squirrelAppDelegate.problematicLaunchDetected() {
         print("Problematic launch detected!")
-        let args = ["Problematic launch detected! Squirrel may be suffering a crash due to improper configuration. Revert previous modifications to see if the problem recurs."]
+        let args = ["Problematic launch detected. LingoSphere may be suffering a crash due to an invalid configuration. Restore a recent settings backup and try again."]
         let task = Process()
         task.executableURL = "/usr/bin/say".withCString { dir in
           URL(fileURLWithFileSystemRepresentation: dir, isDirectory: false, relativeTo: nil)
@@ -149,11 +149,11 @@ struct SquirrelApp {
         NSApp.squirrelAppDelegate.setupRime()
         NSApp.squirrelAppDelegate.startRime(fullCheck: false)
         NSApp.squirrelAppDelegate.loadSettings()
-        print("Squirrel reporting!")
+        print("LingoSphere reporting!")
       }
 
       app.run()
-      print("Squirrel is quitting...")
+      print("LingoSphere is quitting...")
       rimeAPI.finalize()
     }
     return
@@ -162,14 +162,14 @@ struct SquirrelApp {
   static let helpDoc = """
 Supported arguments:
 Perform actions:
-  --quit                     quit all Squirrel process
+  --quit                     quit all LingoSphere processes
   --reload                   deploy
   --sync                     sync user data
   --build                    build all schemas in current directory
   --ascii                    turn on ASCII mode
   --nascii                   turn off ASCII mode
   --getascii                 get current ASCII mode status
-Install Squirrel:
+Install LingoSphere:
   --install, --register-input-source    register input source
   --enable-input-source [source id...]  input source list optional
   --disable-input-source [source id...] input source list optional

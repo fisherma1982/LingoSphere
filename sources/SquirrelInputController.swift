@@ -11,6 +11,19 @@ final class SquirrelInputController: IMKInputController {
   private static let keyRollOver = 50
   private static var unknownAppCnt: UInt = 0
 
+  private enum CandidateTranslationMenuTag {
+    static let english = 41_001
+    static let japanese = 41_002
+    static let korean = 41_003
+    static let german = 41_004
+    static let spanish = 41_005
+    static let portuguese = 41_006
+    static let french = 41_007
+    static let commitTranslation = 41_097
+    static let disable = 41_098
+    static let manage = 41_099
+  }
+
   private weak var client: IMKTextInput?
   private let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
   private var preedit: String = ""
@@ -27,6 +40,14 @@ final class SquirrelInputController: IMKInputController {
   private var chordTimer: Timer?
   private var chordDuration: TimeInterval = 0
   private var currentApp: String = ""
+  // Candidates the user chose to insert as their translation. A choice that
+  // only covers part of the input stays here until Rime commits the whole
+  // composition, at which point each source text is replaced in order.
+  private var pendingTranslationSubstitutions: [(source: String, translation: String)] = []
+  private var lastCommitEndedWithTranslatedWord = false
+  // Shown in place of the candidate list while the user chooses which of a
+  // candidate's several translations to insert.
+  private var sensePicker: (candidateIndex: Int, source: String, senses: [String], highlighted: Int)?
 
   // swiftlint:disable:next cyclomatic_complexity
   override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
@@ -93,12 +114,30 @@ final class SquirrelInputController: IMKInputController {
       rimeUpdate()
 
     case .keyDown:
+      if sensePicker != nil && handleSensePickerKey(event) {
+        handled = true
+        break
+      }
       // Let client apps handle Command shortcuts.
       if modifiers.contains(.command) {
         break
       }
 
       let keyCode = event.keyCode
+      // Editing the composition invalidates earlier translation choices.
+      if keyCode == 51 || keyCode == 53 {  // delete, escape
+        pendingTranslationSubstitutions.removeAll()
+      }
+      var modifiers = modifiers
+      if let selection = translationSelection(for: event, modifiers: modifiers) {
+        if selection.wantsTranslation && commitTranslation(ofCandidateAt: selection.index) {
+          handled = true
+          break
+        }
+        // Either the Chinese text was asked for, or no translation is known
+        // yet: let Rime select the candidate as if Option were not held.
+        modifiers.remove(.option)
+      }
       var keyChars = event.charactersIgnoringModifiers
       let capitalModifiers = modifiers.isSubset(of: [.shift, .capsLock])
       if let code = keyChars?.first,
@@ -115,6 +154,11 @@ final class SquirrelInputController: IMKInputController {
           rimeUpdate()
         }
       }
+      if !handled {
+        // The key goes to the application (a space, an arrow, …), so the next
+        // translated word no longer directly follows the previous one.
+        lastCommitEndedWithTranslatedWord = false
+      }
 
     default:
       break
@@ -124,6 +168,17 @@ final class SquirrelInputController: IMKInputController {
   }
 
   func selectCandidate(_ index: Int) -> Bool {
+    if sensePicker != nil {
+      // A click in the translation list chooses that translation.
+      commitSense(at: index)
+      return true
+    }
+    if #available(macOS 15.0, *),
+       let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator,
+       MainActor.assumeIsolated({ translator.isEnabled && translator.commitsTranslation }),
+       commitTranslation(ofCandidateAt: index) {
+      return true
+    }
     let success = rimeAPI.select_candidate_on_current_page(session, index)
     if success {
       rimeUpdate()
@@ -133,6 +188,7 @@ final class SquirrelInputController: IMKInputController {
 
   // swiftlint:disable:next identifier_name
   func page(up: Bool) -> Bool {
+    sensePicker = nil
     var handled = false
     handled = rimeAPI.change_page(session, up)
     if handled {
@@ -202,7 +258,7 @@ final class SquirrelInputController: IMKInputController {
     createSession()
 
     NotificationCenter.default.addObserver(
-      forName: .init("SquirrelSetASCIIModeNotification"),
+      forName: LingoSphereIdentity.setASCIIModeNotification,
       object: nil,
       queue: nil
     ) { [weak self] notification in
@@ -210,7 +266,7 @@ final class SquirrelInputController: IMKInputController {
     }
 
     NotificationCenter.default.addObserver(
-      forName: .init("SquirrelReportASCIIModeNotification"),
+      forName: LingoSphereIdentity.requestASCIIModeReportNotification,
       object: nil,
       queue: nil
     ) { [weak self] notification in
@@ -233,6 +289,8 @@ final class SquirrelInputController: IMKInputController {
     self.client ?= sender as? IMKTextInput
     if session != 0 {
       if let input = rimeAPI.get_input(session) {
+        pendingTranslationSubstitutions.removeAll()
+        sensePicker = nil
         commit(string: String(cString: input))
         rimeAPI.clear_composition(session)
       }
@@ -240,29 +298,108 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func menu() -> NSMenu! {
-    let deploy = NSMenuItem(title: NSLocalizedString("Deploy", comment: "Menu item"), action: #selector(deploy), keyEquivalent: "`")
-    deploy.target = self
-    deploy.keyEquivalentModifierMask = [.control, .option]
-    let sync = NSMenuItem(title: NSLocalizedString("Sync user data", comment: "Menu item"), action: #selector(syncUserData), keyEquivalent: "")
-    sync.target = self
-    let logDir = NSMenuItem(title: NSLocalizedString("Logs...", comment: "Menu item"), action: #selector(openLogFolder), keyEquivalent: "")
-    logDir.target = self
-    let setting = NSMenuItem(title: NSLocalizedString("Settings...", comment: "Menu item"), action: #selector(openRimeFolder), keyEquivalent: "")
-    setting.target = self
-    let wiki = NSMenuItem(title: NSLocalizedString("Rime Wiki...", comment: "Menu item"), action: #selector(openWiki), keyEquivalent: "")
-    wiki.target = self
-    let update = NSMenuItem(title: NSLocalizedString("Check for updates...", comment: "Menu item"), action: #selector(checkForUpdates), keyEquivalent: "")
-    update.target = self
-
     let menu = NSMenu()
-    menu.addItem(deploy)
-    menu.addItem(sync)
-    menu.addItem(logDir)
-    menu.addItem(setting)
-    menu.addItem(wiki)
-    menu.addItem(update)
+
+    let productSettings = NSMenuItem(
+      title: "语界设置…",
+      action: #selector(showLingoSphereSettings(_:)),
+      keyEquivalent: ","
+    )
+    productSettings.target = self
+    productSettings.keyEquivalentModifierMask = [.command]
+    menu.addItem(productSettings)
+    menu.addItem(.separator())
+
+    if #available(macOS 15.0, *), let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator {
+      let translationState = MainActor.assumeIsolated {
+        (enabled: translator.isEnabled, language: translator.activeLanguage,
+         commitsTranslation: translator.commitsTranslation)
+      }
+      let translationItem = NSMenuItem(
+        title: translationState.enabled
+          ? "候选翻译 · \(translationState.language.nativeName)"
+          : "候选翻译 · 已关闭",
+        action: nil,
+        keyEquivalent: ""
+      )
+      // IMK's remote menu can display nested items without delivering their
+      // commands. Keep translation commands in the returned root menu.
+      translationItem.isEnabled = false
+      menu.addItem(translationItem)
+      for language in CandidateTranslationLanguage.allCases {
+        let languageItem = NSMenuItem(
+          title: language.menuTitle,
+          action: candidateTranslationMenuAction(for: language),
+          keyEquivalent: ""
+        )
+        languageItem.tag = candidateTranslationMenuTag(for: language)
+        languageItem.target = self
+        languageItem.isEnabled = true
+        languageItem.state = translationState.enabled && translationState.language == language ? .on : .off
+        menu.addItem(languageItem)
+      }
+      menu.addItem(.separator())
+      let commitTranslation = NSMenuItem(
+        title: "选词时上屏译文（按住 Option 则相反）",
+        action: #selector(toggleTranslationCommit(_:)),
+        keyEquivalent: ""
+      )
+      commitTranslation.tag = CandidateTranslationMenuTag.commitTranslation
+      commitTranslation.target = self
+      commitTranslation.isEnabled = translationState.enabled
+      commitTranslation.state = translationState.commitsTranslation ? .on : .off
+      menu.addItem(commitTranslation)
+      let disableTranslation = NSMenuItem(
+        title: "关闭候选翻译",
+        action: #selector(disableCandidateTranslation(_:)),
+        keyEquivalent: ""
+      )
+      disableTranslation.tag = CandidateTranslationMenuTag.disable
+      disableTranslation.target = self
+      disableTranslation.isEnabled = true
+      disableTranslation.state = translationState.enabled ? .off : .on
+      menu.addItem(disableTranslation)
+      let manageTranslation = NSMenuItem(
+        title: "管理翻译语言…",
+        action: #selector(manageCandidateTranslation(_:)),
+        keyEquivalent: ""
+      )
+      manageTranslation.tag = CandidateTranslationMenuTag.manage
+      manageTranslation.target = self
+      manageTranslation.isEnabled = true
+      menu.addItem(manageTranslation)
+    }
 
     return menu
+  }
+
+  override func doCommand(
+    by aSelector: Selector!,
+    command infoDictionary: [AnyHashable: Any]!
+  ) {
+    let selectorName = aSelector.map(NSStringFromSelector) ?? "<nil>"
+    let selectedItem = infoDictionary?[kIMKCommandMenuItemName] as? NSMenuItem
+    NSLog(
+      "LingoSphere input-menu command selector=%@ tag=%ld title=%@ mainThread=%d",
+      selectorName,
+      selectedItem?.tag ?? 0,
+      selectedItem?.title ?? "<none>",
+      Thread.isMainThread
+    )
+
+    if #available(macOS 15.0, *) {
+      // Recent macOS versions may preserve either the selector or the menu
+      // item's tag when TextInputMenuAgent proxies a submenu. Accept both so
+      // language switching is not dependent on one private serialization path.
+      if let selectedItem, handleCandidateTranslationMenuTag(selectedItem.tag) {
+        return
+      }
+      if let aSelector, handleCandidateTranslationSelector(aSelector) {
+        return
+      }
+    }
+
+    super.doCommand(by: aSelector, command: infoDictionary)
   }
 
   @objc func deploy() {
@@ -281,12 +418,177 @@ final class SquirrelInputController: IMKInputController {
     NSApp.squirrelAppDelegate.openRimeFolder()
   }
 
-  @objc func checkForUpdates() {
-    NSApp.squirrelAppDelegate.checkForUpdates()
+  @objc func showLingoSphereSettings(_ sender: Any?) {
+    NSApp.squirrelAppDelegate.showLingoSphereSettings()
   }
 
   @objc func openWiki() {
     NSApp.squirrelAppDelegate.openWiki()
+  }
+
+  @available(macOS 15.0, *)
+  private func candidateTranslationMenuAction(for language: CandidateTranslationLanguage) -> Selector {
+    switch language {
+    case .english: #selector(selectEnglishCandidateTranslation(_:))
+    case .japanese: #selector(selectJapaneseCandidateTranslation(_:))
+    case .korean: #selector(selectKoreanCandidateTranslation(_:))
+    case .german: #selector(selectGermanCandidateTranslation(_:))
+    case .french: #selector(selectFrenchCandidateTranslation(_:))
+    case .spanish: #selector(selectSpanishCandidateTranslation(_:))
+    case .portuguese: #selector(selectPortugueseCandidateTranslation(_:))
+    }
+  }
+
+  @available(macOS 15.0, *)
+  private func candidateTranslationMenuTag(for language: CandidateTranslationLanguage) -> Int {
+    switch language {
+    case .english: CandidateTranslationMenuTag.english
+    case .japanese: CandidateTranslationMenuTag.japanese
+    case .korean: CandidateTranslationMenuTag.korean
+    case .german: CandidateTranslationMenuTag.german
+    case .french: CandidateTranslationMenuTag.french
+    case .spanish: CandidateTranslationMenuTag.spanish
+    case .portuguese: CandidateTranslationMenuTag.portuguese
+    }
+  }
+
+  @available(macOS 15.0, *)
+  private func handleCandidateTranslationMenuTag(_ tag: Int) -> Bool {
+    let language: CandidateTranslationLanguage?
+    switch tag {
+    case CandidateTranslationMenuTag.english: language = .english
+    case CandidateTranslationMenuTag.japanese: language = .japanese
+    case CandidateTranslationMenuTag.korean: language = .korean
+    case CandidateTranslationMenuTag.german: language = .german
+    case CandidateTranslationMenuTag.french: language = .french
+    case CandidateTranslationMenuTag.spanish: language = .spanish
+    case CandidateTranslationMenuTag.portuguese: language = .portuguese
+    case CandidateTranslationMenuTag.commitTranslation:
+      toggleTranslationCommit(nil)
+      return true
+    case CandidateTranslationMenuTag.disable:
+      disableCandidateTranslation(nil)
+      return true
+    case CandidateTranslationMenuTag.manage:
+      manageCandidateTranslation(nil)
+      return true
+    default:
+      return false
+    }
+
+    guard let language else { return false }
+    selectCandidateTranslation(language)
+    return true
+  }
+
+  @available(macOS 15.0, *)
+  private func handleCandidateTranslationSelector(_ selector: Selector) -> Bool {
+    switch selector {
+    case #selector(selectEnglishCandidateTranslation(_:)):
+      selectCandidateTranslation(.english)
+    case #selector(selectJapaneseCandidateTranslation(_:)):
+      selectCandidateTranslation(.japanese)
+    case #selector(selectKoreanCandidateTranslation(_:)):
+      selectCandidateTranslation(.korean)
+    case #selector(selectGermanCandidateTranslation(_:)):
+      selectCandidateTranslation(.german)
+    case #selector(selectFrenchCandidateTranslation(_:)):
+      selectCandidateTranslation(.french)
+    case #selector(selectSpanishCandidateTranslation(_:)):
+      selectCandidateTranslation(.spanish)
+    case #selector(selectPortugueseCandidateTranslation(_:)):
+      selectCandidateTranslation(.portuguese)
+    case #selector(toggleTranslationCommit(_:)):
+      toggleTranslationCommit(nil)
+    case #selector(disableCandidateTranslation(_:)):
+      disableCandidateTranslation(nil)
+    case #selector(manageCandidateTranslation(_:)):
+      manageCandidateTranslation(nil)
+    default:
+      return false
+    }
+    return true
+  }
+
+  @objc func selectEnglishCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.english)
+  }
+
+  @objc func selectJapaneseCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.japanese)
+  }
+
+  @objc func selectKoreanCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.korean)
+  }
+
+  @objc func selectGermanCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.german)
+  }
+
+  @objc func selectFrenchCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.french)
+  }
+
+  @objc func selectSpanishCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.spanish)
+  }
+
+  @objc func selectPortugueseCandidateTranslation(_ sender: Any?) {
+    selectCandidateTranslation(.portuguese)
+  }
+
+  private func selectCandidateTranslation(_ language: CandidateTranslationLanguage) {
+    guard #available(macOS 15.0, *) else { return }
+    performCandidateTranslationAction { translator in
+      print("Switching candidate translation from input menu to: \(language.rawValue)")
+      translator.selectLanguage(language, prepare: true)
+    }
+  }
+
+  @objc func disableCandidateTranslation(_ sender: Any?) {
+    guard #available(macOS 15.0, *) else { return }
+    performCandidateTranslationAction { translator in
+      translator.setEnabled(false)
+    }
+  }
+
+  @objc func toggleTranslationCommit(_ sender: Any?) {
+    guard #available(macOS 15.0, *) else { return }
+    performCandidateTranslationAction { translator in
+      translator.setCommitsTranslation(!translator.commitsTranslation)
+    }
+  }
+
+  @objc func manageCandidateTranslation(_ sender: Any?) {
+    guard #available(macOS 15.0, *) else { return }
+    performCandidateTranslationAction { translator in
+      translator.showLanguageSettings()
+    }
+  }
+
+  @available(macOS 15.0, *)
+  private func performCandidateTranslationAction(
+    _ action: @escaping @MainActor (AppleCandidateTranslator) -> Void
+  ) {
+    if Thread.isMainThread {
+      MainActor.assumeIsolated {
+        guard let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator else { return }
+        action(translator)
+      }
+      return
+    }
+
+    // TextInputMenuAgent may deliver an InputMethodKit command on its
+    // connection thread. Run it synchronously on AppKit's main queue: an async
+    // hop can remain pending after the remote menu closes and the background
+    // input-method process is suspended.
+    DispatchQueue.main.sync {
+      MainActor.assumeIsolated {
+        guard let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator else { return }
+        action(translator)
+      }
+    }
   }
 
   private(set) var specialCommentIndices: [ReservedPropertyKey: Set<Int>] = [:]
@@ -434,11 +736,191 @@ private extension SquirrelInputController {
     return handled
   }
 
+  /// Which candidate a key press selects, and whether its translation rather
+  /// than the candidate itself should be inserted. Nil for every key that is
+  /// not a plain or Option-modified selection key while candidates are shown.
+  func translationSelection(
+    for event: NSEvent,
+    modifiers: NSEvent.ModifierFlags
+  ) -> (index: Int, wantsTranslation: Bool)? {
+    guard #available(macOS 15.0, *),
+          let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator else { return nil }
+    let state = MainActor.assumeIsolated {
+      (enabled: translator.isEnabled, swapped: translator.commitsTranslation)
+    }
+    let optionDown = modifiers.contains(.option)
+    guard state.enabled, optionDown || state.swapped,
+          modifiers.intersection([.control, .command, .shift]).isEmpty,
+          let char = event.charactersIgnoringModifiers?.first else { return nil }
+
+    var ctx = RimeContext_stdbool.rimeStructInit()
+    guard rimeAPI.get_context(session, &ctx) else { return nil }
+    defer { _ = rimeAPI.free_context(&ctx) }
+    let count = Int(ctx.menu.num_candidates)
+    guard count > 0 else { return nil }
+
+    let index: Int?
+    if char == " " {
+      index = Int(ctx.menu.highlighted_candidate_index)
+    } else if let selectKeys = ctx.menu.select_keys {
+      let keys = Array(String(cString: selectKeys))
+      index = keys.firstIndex(of: char)
+    } else if let digit = char.wholeNumberValue, char.isASCII {
+      index = digit == 0 ? 9 : digit - 1
+    } else {
+      index = nil
+    }
+    guard let index, index >= 0, index < count else { return nil }
+    return (index, optionDown != state.swapped)
+  }
+
+  /// Selects the candidate in Rime and arranges for its translation to be
+  /// inserted in its place. Returns false, changing nothing, when the
+  /// candidate has no translation yet.
+  func commitTranslation(ofCandidateAt index: Int) -> Bool {
+    guard #available(macOS 15.0, *),
+          let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator else { return false }
+    var ctx = RimeContext_stdbool.rimeStructInit()
+    guard rimeAPI.get_context(session, &ctx) else { return false }
+    var candidateText: String?
+    if index >= 0, index < Int(ctx.menu.num_candidates) {
+      candidateText = ctx.menu.candidates[index].text.map { String(cString: $0) }
+    }
+    _ = rimeAPI.free_context(&ctx)
+
+    guard let candidateText else { return false }
+    let senses = MainActor.assumeIsolated {
+      translator.committableTranslations(for: candidateText)
+    }
+    guard !senses.isEmpty else { return false }
+
+    sensePicker = (candidateIndex: index, source: candidateText, senses: senses, highlighted: 0)
+    if senses.count == 1 {
+      commitSense(at: 0)
+    } else {
+      showSensePicker()
+    }
+    return true
+  }
+
+  func showSensePicker() {
+    guard let picker = sensePicker else { return }
+    let header = "\(picker.source) →"
+    showPanel(preedit: header, selRange: NSRange(location: 0, length: 0), caretPos: header.utf16.count,
+              candidates: picker.senses, comments: picker.senses.map { _ in "" },
+              labels: picker.senses.indices.map { String(($0 + 1) % 10) },
+              highlighted: picker.highlighted, page: 0, lastPage: true)
+  }
+
+  /// Inserts the chosen translation in place of the candidate the picker was
+  /// opened for.
+  func commitSense(at senseIndex: Int) {
+    guard let picker = sensePicker else { return }
+    sensePicker = nil
+    guard picker.senses.indices.contains(senseIndex) else {
+      rimeUpdate()
+      return
+    }
+    pendingTranslationSubstitutions.append((source: picker.source, translation: picker.senses[senseIndex]))
+    if !rimeAPI.select_candidate_on_current_page(session, picker.candidateIndex) {
+      pendingTranslationSubstitutions.removeLast()
+    }
+    rimeUpdate()
+  }
+
+  /// Returns true when the key was used by the translation list. Returns
+  /// false after closing the list so the key is processed normally.
+  func handleSensePickerKey(_ event: NSEvent) -> Bool {
+    guard var picker = sensePicker else { return false }
+    guard !event.modifierFlags.contains(.command) else {
+      sensePicker = nil
+      rimeUpdate()
+      return false
+    }
+    switch event.keyCode {
+    case 53, 51:  // escape, delete: back to the candidate list
+      sensePicker = nil
+      rimeUpdate()
+      return true
+    case 49, 36, 76:  // space, return, keypad enter
+      commitSense(at: picker.highlighted)
+      return true
+    case 125, 124:  // down, right
+      picker.highlighted = min(picker.senses.count - 1, picker.highlighted + 1)
+      sensePicker = picker
+      showSensePicker()
+      return true
+    case 126, 123:  // up, left
+      picker.highlighted = max(0, picker.highlighted - 1)
+      sensePicker = picker
+      showSensePicker()
+      return true
+    default:
+      break
+    }
+    if let char = event.charactersIgnoringModifiers?.first, char.isASCII,
+       let digit = char.wholeNumberValue, digit >= 1, digit <= picker.senses.count {
+      commitSense(at: digit - 1)
+      return true
+    }
+    sensePicker = nil
+    return false
+  }
+
+  func applyPendingTranslations(to committed: String) -> String {
+    let substitutions = pendingTranslationSubstitutions
+    pendingTranslationSubstitutions.removeAll()
+    guard !substitutions.isEmpty else {
+      lastCommitEndedWithTranslatedWord = false
+      return committed
+    }
+
+    var result = ""
+    var rest = Substring(committed)
+    var endsWithTranslation = false
+    // Words written with spaces (English, Korean, …) need one between two
+    // consecutive translations, including one from the previous commit.
+    var previousWasTranslatedWord = lastCommitEndedWithTranslatedWord
+    for (source, translation) in substitutions {
+      guard let range = rest.range(of: source) else { continue }
+      if range.lowerBound != rest.startIndex {
+        result += rest[..<range.lowerBound]
+        previousWasTranslatedWord = false
+      }
+      if previousWasTranslatedWord,
+         let first = translation.first, Self.usesWordSpacing(first) {
+        result += " "
+      }
+      result += translation
+      rest = rest[range.upperBound...]
+      previousWasTranslatedWord = translation.last.map(Self.usesWordSpacing) ?? false
+      endsWithTranslation = true
+    }
+    if !rest.isEmpty {
+      result += rest
+      endsWithTranslation = false
+    }
+    lastCommitEndedWithTranslatedWord = endsWithTranslation && previousWasTranslatedWord
+    return result
+  }
+
+  static func usesWordSpacing(_ character: Character) -> Bool {
+    guard character.isLetter || character.isNumber,
+          let scalar = character.unicodeScalars.first else { return false }
+    switch scalar.value {
+    // CJK ideographs, kana and full-width forms are written without spaces.
+    case 0x2E80...0x9FFF, 0xF900...0xFAFF, 0xFF00...0xFFEF, 0x20000...0x323AF:
+      return false
+    default:
+      return true
+    }
+  }
+
   func rimeConsumeCommittedText() {
     var commitText = RimeCommit.rimeStructInit()
     if rimeAPI.get_commit(session, &commitText) {
       if let text = commitText.text {
-        commit(string: String(cString: text))
+        commit(string: applyPendingTranslations(to: String(cString: text)))
       }
       _ = rimeAPI.free_commit(&commitText)
     }
@@ -549,12 +1031,37 @@ private extension SquirrelInputController {
       let page = Int(ctx.menu.page_no)
       let lastPage = ctx.menu.is_last_page
 
+      if #available(macOS 15.0, *), let translator = NSApp.squirrelAppDelegate.appleCandidateTranslator {
+        let translatedComments = MainActor.assumeIsolated { () -> [String]? in
+          guard translator.isEnabled else { return nil }
+          if translator.requiresOption && !rimeAPI.get_option(session, translator.optionName) {
+            return nil
+          }
+          return translator.translatedComments(candidates: candidates, comments: comments) { [weak self] in
+            guard let self = self, self.session != 0, self.rimeAPI.find_session(self.session) else { return }
+            self.rimeUpdate(clearReservedComments: false)
+          }
+        }
+        if let translatedComments = translatedComments {
+          comments = translatedComments
+        }
+      }
+
       let selRange = NSRange(location: start.utf16Offset(in: preedit), length: preedit.utf16.distance(from: start, to: end))
-      showPanel(preedit: inlinePreedit ? "" : preedit, selRange: selRange, caretPos: caretPos.utf16Offset(in: preedit),
-                candidates: candidates, comments: comments, labels: labels, highlighted: Int(ctx.menu.highlighted_candidate_index),
-                page: page, lastPage: lastPage)
+      if sensePicker != nil && numCandidates > 0 {
+        // A modifier release or a late translation refresh must not replace
+        // the translation list the user is choosing from.
+        showSensePicker()
+      } else {
+        sensePicker = nil
+        showPanel(preedit: inlinePreedit ? "" : preedit, selRange: selRange, caretPos: caretPos.utf16Offset(in: preedit),
+                  candidates: candidates, comments: comments, labels: labels, highlighted: Int(ctx.menu.highlighted_candidate_index),
+                  page: page, lastPage: lastPage)
+      }
       _ = rimeAPI.free_context(&ctx)
     } else {
+      sensePicker = nil
+      pendingTranslationSubstitutions.removeAll()
       hidePalettes()
     }
   }
@@ -634,7 +1141,7 @@ private extension SquirrelInputController {
     let status = isASCIIMode ? "ascii" : "nascii"
 
     DistributedNotificationCenter.default().postNotificationName(
-      .init("SquirrelASCIIModeResponse"),
+      LingoSphereIdentity.asciiModeResponseNotification,
       object: status
     )
   }

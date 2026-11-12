@@ -3,6 +3,7 @@ Squirrel.xcodeproj/*.pbxuser
 Squirrel.xcodeproj/project.xcworkspace/
 Squirrel.xcodeproj/xcuserdata/
 build/
+manual-build/
 build.log
 Frameworks/*
 bin/*
@@ -10,7 +11,9 @@ lib/*
 data/opencc/
 data/plum/
 download/
+dist/
 package/Squirrel*.pkg
+package/LingoSphere*.pkg
 package/sign/*.pem
 package/test-*
 package/generate_keys

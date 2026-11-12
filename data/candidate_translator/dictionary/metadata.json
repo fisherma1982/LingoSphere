@@ -1,0 +1,13 @@
+{
+  "format": 2,
+  "generated_at": "2026-11-12T09:57:57.941377+00:00",
+  "source": "CC-CEDICT",
+  "source_url": "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz",
+  "source_sha256": "4a558d0fe2d055a30391a2a07030fbc25677f7f6cea115c55d323c100845d5b3",
+  "license": "CC BY-SA 4.0",
+  "parsed_source_entries": 125408,
+  "skipped_source_lines": 0,
+  "output_headwords": 198675,
+  "override_headwords": 44,
+  "bucket_count": 128
+}

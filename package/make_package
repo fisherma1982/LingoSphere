@@ -2,22 +2,63 @@
 
 set -e
 
+# rime-install is a script, so codesign stores its generic-code signature in
+# extended attributes instead of a Mach-O load command.  COPYFILE_DISABLE=1,
+# ditto --noextattr, or a recursive xattr clear silently strips that signature
+# and leaves an invalid app inside an otherwise successful package.
+unset COPYFILE_DISABLE
+
 DERIVED_DATA_PATH=$1
-BUNDLE_IDENTIFIER='im.rime.inputmethod.Squirrel'
+BUNDLE_IDENTIFIER='com.lingosphere.inputmethod.LingoSphere'
 INSTALL_LOCATION='/Library/Input Methods'
 
 cd "$(dirname $0)"
 source common.sh
 
+installer_scripts="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/lingosphere-installer-scripts.XXXXXX")"
+package_root="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/lingosphere-package-root.XXXXXX")"
+cleanup() {
+    /bin/rm -rf "${installer_scripts}"
+    /bin/rm -rf "${package_root}"
+    /bin/rm -f Distribution-versioned.xml LingoSphere-component.pkg
+}
+trap cleanup EXIT
+
+/bin/cp -X "${PROJECT_ROOT}/scripts/preinstall" "${installer_scripts}/preinstall"
+/bin/cp -X "${PROJECT_ROOT}/scripts/postinstall" "${installer_scripts}/postinstall"
+/usr/bin/xcrun clang \
+    -fobjc-arc -Os -arch arm64 -arch x86_64 -mmacosx-version-min=15.0 \
+    -framework Foundation -framework Carbon \
+    "${PROJECT_ROOT}/scripts/InputSourceMigrator.m" \
+    -o "${installer_scripts}/input-source-migrator"
+/usr/bin/codesign --force --sign - "${installer_scripts}/input-source-migrator"
+/bin/chmod 755 \
+    "${installer_scripts}/preinstall" \
+    "${installer_scripts}/postinstall" \
+    "${installer_scripts}/input-source-migrator"
+/usr/bin/xattr -c \
+    "${installer_scripts}/preinstall" \
+    "${installer_scripts}/postinstall" \
+    "${installer_scripts}/input-source-migrator"
+
+# Keep code-signing extended attributes while staging. PackageKit preserves
+# them in the payload and restores them on installation.
+/usr/bin/ditto \
+    "${PROJECT_ROOT}/${DERIVED_DATA_PATH}/Build/Products/Release/LingoSphere.app" \
+    "${package_root}/LingoSphere.app"
+/usr/bin/codesign --verify --deep --strict "${package_root}/LingoSphere.app"
+
 pkgbuild \
-    --root "${PROJECT_ROOT}/${DERIVED_DATA_PATH}/Build/Products/Release" \
+    --root "${package_root}" \
     --filter '.*\.swiftmodule$' \
-    --component-plist Squirrel-component.plist \
+    --filter '.*/\._.*$' \
+    --filter '.*/\.DS_Store$' \
+    --component-plist LingoSphere-component.plist \
     --identifier "${BUNDLE_IDENTIFIER}" \
     --version "$(get_app_version)" \
     --install-location "${INSTALL_LOCATION}" \
-    --scripts "${PROJECT_ROOT}/scripts" \
-    Squirrel-component.pkg
+    --scripts "${installer_scripts}" \
+    LingoSphere-component.pkg
 
 sed "s/@VERSION@/$(get_app_version)/" Distribution > Distribution-versioned.xml
 
@@ -25,8 +66,4 @@ productbuild \
     --distribution Distribution-versioned.xml \
     --package-path . \
     --resources . \
-    Squirrel.pkg
-
-rm Distribution-versioned.xml
-
-rm Squirrel-component.pkg
+    LingoSphere.pkg
